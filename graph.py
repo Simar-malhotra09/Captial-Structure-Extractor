@@ -853,9 +853,11 @@ This determines the hierarchy: issuer → guarantors → priority level
 - Credit facilities/term loans → Senior Secured
 - "First Lien" → Senior Secured  
 - "Second Lien" → Senior Secured (lower seniority within secured)
-- "Senior Guaranteed Notes" or notes described as "guaranteed" → Guaranteed
-- "Senior Notes" without secured/guaranteed language → Unsecured
+- "Senior Guaranteed Notes" (where "Guaranteed" is IN THE NAME of the instrument) → Guaranteed
+- "Senior Notes" → Unsecured. THIS IS THE DEFAULT. Even if the narrative says "guaranteed by subsidiaries" or "guaranteed on a senior unsecured basis", that describes the guarantor structure, NOT the priority. The priority is Unsecured unless the instrument name itself says "Guaranteed Notes" or "Secured Notes".
+- "Senior Secured Notes" → Senior Secured
 - Leases → Senior Secured
+- IMPORTANT: Do NOT confuse guarantor language with priority. "Fully and unconditionally guaranteed by subsidiaries" = tells you WHO guarantees, not the priority tier. Priority comes from the instrument name.
 
 ## 4. Exclude non-instruments
 Mark as exclude: totals, subtotals, current portions, maturity schedules, fair values, gains/losses, balance roll-forwards.
