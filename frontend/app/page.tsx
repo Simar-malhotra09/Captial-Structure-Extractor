@@ -227,7 +227,6 @@ function TableView({ result: r, onClickSource }: { result: ExtractionResult; onC
   r.instruments.forEach(i => { instById[i.id] = i; });
 
   // Sort entities: subsidiaries first, parent last
-  // Parent = entity whose instruments have no parent_issuer set, or matches company_name
   const parentName = (r.company_name || "").toLowerCase().replace(/[,.]?\s*(inc|corp|llc|ltd)\.?$/i, "").trim();
   
   const isParentEntity = (name: string): boolean => {
@@ -271,86 +270,173 @@ function TableView({ result: r, onClickSource }: { result: ExtractionResult; onC
     });
   };
 
+  // Column headers
+  const cols = [
+    { label: "Instrument Name", align: "left" as const },
+    { label: "Amount Outstanding ($mm)", align: "right" as const },
+    { label: "Amount Available ($mm)", align: "right" as const },
+    { label: "Coupon (%)", align: "left" as const },
+    { label: "Maturity", align: "left" as const },
+    { label: "Priority", align: "left" as const },
+    { label: "Parent Issuer", align: "left" as const },
+    { label: "Issue Date", align: "left" as const },
+    { label: "Source", align: "left" as const },
+    { label: "Conf", align: "center" as const },
+  ];
+
+  // Build rows with subtotals
+  const rows: Array<{
+    type: "entity_header" | "instrument" | "subtotal" | "spacer" | "summary";
+    label?: string;
+    inst?: Instrument;
+    amount?: number;
+    availAmount?: number;
+    bold?: boolean;
+    entity?: string;
+  }> = [];
+
+  let grandTotalDebt = 0;
+  let grandTotalAvail = 0;
+
+  for (const entity of sortedEntities) {
+    const ids = r.entity_instruments[entity] || [];
+    const insts = sortInstruments(ids.map(id => instById[id]).filter(Boolean));
+    if (insts.length === 0) continue;
+
+    // Entity header
+    rows.push({ type: "entity_header", label: entity });
+
+    // Group by priority, add instruments and subtotals
+    let currentPriority = "";
+    let priorityTotal = 0;
+    let priorityAvail = 0;
+
+    for (let i = 0; i < insts.length; i++) {
+      const inst = insts[i];
+      
+      if (inst.priority !== currentPriority) {
+        // Close previous priority group
+        if (currentPriority && priorityTotal > 0) {
+          rows.push({ type: "subtotal", label: `Total ${currentPriority}`, amount: priorityTotal, availAmount: priorityAvail });
+        }
+        currentPriority = inst.priority;
+        priorityTotal = 0;
+        priorityAvail = 0;
+      }
+
+      rows.push({ type: "instrument", inst, entity });
+      priorityTotal += inst.amount_mm || 0;
+      priorityAvail += inst.amount_available_mm || 0;
+      grandTotalDebt += inst.amount_mm || 0;
+      grandTotalAvail += inst.amount_available_mm || 0;
+    }
+
+    // Close last priority group
+    if (currentPriority && priorityTotal > 0) {
+      rows.push({ type: "subtotal", label: `Total ${currentPriority}`, amount: priorityTotal, availAmount: priorityAvail });
+    }
+  }
+
+  // Summary section
+  rows.push({ type: "spacer" });
+  rows.push({ type: "summary", label: "Total Debt", amount: r.total_debt_mm, availAmount: grandTotalAvail, bold: true });
+  rows.push({ type: "summary", label: "- Cash and cash equivalents", amount: -r.cash_mm });
+  rows.push({ type: "summary", label: "Net Debt", amount: r.net_debt_mm, bold: true });
+  rows.push({ type: "summary", label: "+ Noncontrolling interests", amount: r.nci_mm });
+  rows.push({ type: "summary", label: "+ Market capitalization", amount: r.market_cap_mm });
+  rows.push({ type: "summary", label: "Enterprise Value", amount: r.enterprise_value_mm, bold: true });
+
   return (
     <div className="p-6 max-w-[1400px] mx-auto">
-      <p className="text-xs text-gray-400 mb-4">
+      <p className="text-xs text-gray-400 mb-3">
         💡 Click the <strong>Source</strong> column on any row to jump to the original filing table.
       </p>
-      {sortedEntities.map(entity => {
-        const ids = r.entity_instruments[entity] || [];
-        const insts = sortInstruments(ids.map(id => instById[id]).filter(Boolean));
-        const total = insts.reduce((s, i) => s + (i.amount_mm || 0), 0);
-        if (insts.length === 0) return null;
-
-        return (
-          <div key={entity} className="mb-6">
-            <div className="text-sm font-bold text-gray-900 pb-1 border-b-2 border-gray-900">
-              {entity}{" "}
-              <span className="font-normal text-gray-400 text-xs">
-                ({insts.length} instruments, ${total.toLocaleString(undefined, { maximumFractionDigits: 1 })}mm)
-              </span>
-            </div>
-            <table className="w-full text-xs mt-1">
-              <thead>
-                <tr className="bg-gray-50 text-gray-500 uppercase tracking-wider">
-                  <th className="text-left p-2 font-medium">Instrument</th>
-                  <th className="text-right p-2 font-medium">Outstanding ($mm)</th>
-                  <th className="text-right p-2 font-medium">Available ($mm)</th>
-                  <th className="text-left p-2 font-medium">Coupon</th>
-                  <th className="text-left p-2 font-medium">Maturity</th>
-                  <th className="text-left p-2 font-medium">Priority</th>
-                  <th className="text-center p-2 font-medium">Conf</th>
-                  <th className="text-left p-2 font-medium">Source</th>
-                  <th className="text-left p-2 font-medium max-w-[200px]">Reason</th>
+      <table className="w-full text-xs border-collapse">
+        <thead>
+          <tr className="bg-gray-100 border-b border-gray-300">
+            {cols.map(c => (
+              <th key={c.label} className={`p-2 font-semibold text-gray-600 text-${c.align} text-[10px] uppercase tracking-wider`}>
+                {c.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, idx) => {
+            if (row.type === "entity_header") {
+              return (
+                <tr key={idx} className="bg-gray-800">
+                  <td colSpan={cols.length} className="p-2 text-white font-bold text-xs">
+                    {row.label}
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {insts.map(inst => (
-                  <tr
-                    key={inst.id}
-                    className={`border-b border-gray-100 hover:bg-gray-50 ${inst._reason ? "bg-yellow-50" : ""}`}
-                  >
-                    <td className="p-2">{inst.clean_name || inst.label}</td>
-                    <td className="p-2 text-right font-mono">
-                      {inst.amount_mm != null ? inst.amount_mm.toLocaleString(undefined, { minimumFractionDigits: 3 }) : ""}
-                    </td>
-                    <td className="p-2 text-right font-mono">
-                      {inst.amount_available_mm != null ? inst.amount_available_mm.toLocaleString(undefined, { minimumFractionDigits: 3 }) : ""}
-                    </td>
-                    <td className="p-2">{inst.coupon || inst.rate || ""}</td>
-                    <td className="p-2">{inst.maturity_year || ""}</td>
-                    <td className="p-2"><PriorityBadge p={inst.priority} /></td>
-                    <td className="p-2 text-center"><ConfBadge c={inst._confidence} /></td>
-                    <td
-                      className="p-2 text-[10px] text-gray-400 cursor-pointer hover:text-blue-600"
-                      onClick={() => inst.source && onClickSource(inst.source)}
-                    >
-                      {inst.source || ""}
-                    </td>
-                    <td className="p-2 text-[10px] text-blue-700 max-w-[200px] truncate" title={inst._reason || ""}>
-                      {inst._reason || ""}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        );
-      })}
-
-      {/* Totals */}
-      <div className="mt-4 bg-white border border-gray-200 rounded p-4 inline-block">
-        <table className="text-sm">
-          <tbody>
-            <TotalRow label="Total Debt" value={r.total_debt_mm} bold />
-            <TotalRow label="− Cash" value={-r.cash_mm} />
-            <TotalRow label="Net Debt" value={r.net_debt_mm} bold border />
-            <TotalRow label="+ NCI" value={r.nci_mm} />
-            <TotalRow label="+ Market Cap" value={r.market_cap_mm} />
-            <TotalRow label="Enterprise Value" value={r.enterprise_value_mm} bold border />
-          </tbody>
-        </table>
-      </div>
+              );
+            }
+            if (row.type === "subtotal") {
+              return (
+                <tr key={idx} className="bg-gray-100 border-t border-gray-300">
+                  <td className="p-2 font-bold text-gray-700">{row.label}</td>
+                  <td className="p-2 text-right font-mono font-bold text-gray-700">
+                    {fmtAmt(row.amount)}
+                  </td>
+                  <td className="p-2 text-right font-mono font-bold text-gray-700">
+                    {fmtAmt(row.availAmount ?? 0)}
+                  </td>
+                  <td colSpan={cols.length - 3}></td>
+                </tr>
+              );
+            }
+            if (row.type === "spacer") {
+              return <tr key={idx}><td colSpan={cols.length} className="p-1"></td></tr>;
+            }
+            if (row.type === "summary") {
+              return (
+                <tr key={idx} className={row.bold ? "border-t border-gray-400 bg-gray-50" : ""}>
+                  <td className={`p-2 ${row.bold ? "font-bold text-gray-900" : "text-gray-600"}`}>
+                    {row.label}
+                  </td>
+                  <td className={`p-2 text-right font-mono ${row.bold ? "font-bold text-gray-900" : "text-gray-600"}`}>
+                    {fmtAmt(row.amount)}
+                  </td>
+                  <td className="p-2 text-right font-mono text-gray-600">
+                    {row.label === "Total Debt" ? fmtAmt(row.availAmount ?? 0) : ""}
+                  </td>
+                  <td colSpan={cols.length - 3}></td>
+                </tr>
+              );
+            }
+            // Instrument row
+            const inst = row.inst!;
+            const parentIssuer = isParentEntity(row.entity || "") ? "" : r.company_name;
+            return (
+              <tr
+                key={idx}
+                className={`border-b border-gray-100 hover:bg-blue-50 transition-colors ${inst._reason ? "bg-yellow-50/50" : ""}`}
+              >
+                <td className="p-2">{inst.clean_name || inst.label}</td>
+                <td className="p-2 text-right font-mono">
+                  {inst.amount_mm != null ? inst.amount_mm.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 4 }) : ""}
+                </td>
+                <td className="p-2 text-right font-mono">
+                  {inst.amount_available_mm != null ? inst.amount_available_mm.toLocaleString(undefined, { minimumFractionDigits: 1 }) : ""}
+                </td>
+                <td className="p-2">{inst.coupon || inst.rate || (["revolver", "term_loan", "credit_facility"].includes(inst.type) ? "variable" : "")}</td>
+                <td className="p-2">{inst.maturity_year || ""}</td>
+                <td className="p-2"><PriorityBadge p={inst.priority} /></td>
+                <td className="p-2 text-gray-500">{parentIssuer}</td>
+                <td className="p-2">{inst.issue_date || ""}</td>
+                <td
+                  className="p-2 text-[9px] text-gray-400 cursor-pointer hover:text-blue-600"
+                  onClick={() => inst.source && onClickSource(inst.source)}
+                >
+                  {inst.source || ""}
+                </td>
+                <td className="p-2 text-center"><ConfBadge c={inst._confidence} /></td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
 
       {/* Excluded */}
       {r.excluded.length > 0 && (
@@ -402,6 +488,11 @@ function TableView({ result: r, onClickSource }: { result: ExtractionResult; onC
       )}
     </div>
   );
+}
+
+function fmtAmt(n?: number | null): string {
+  if (n == null) return "";
+  return n.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 4 });
 }
 
 /* ─── Graph View ─── */
@@ -625,17 +716,6 @@ function ConfBadge({ c }: { c?: number | null }) {
   if (c == null) return null;
   const color = c >= 0.8 ? "text-green-600" : c >= 0.5 ? "text-amber-500" : "text-red-500";
   return <span className={`text-[10px] font-semibold ${color}`}>{Math.round(c * 100)}%</span>;
-}
-
-function TotalRow({ label, value, bold, border }: { label: string; value: number; bold?: boolean; border?: boolean }) {
-  return (
-    <tr className={border ? "border-t-2 border-gray-900" : ""}>
-      <td className={`pr-6 py-1 ${bold ? "font-bold" : ""}`}>{label}</td>
-      <td className={`text-right font-mono py-1 ${bold ? "font-bold" : ""}`}>
-        ${value?.toLocaleString(undefined, { minimumFractionDigits: 1 })}mm
-      </td>
-    </tr>
-  );
 }
 
 function FileInput({
