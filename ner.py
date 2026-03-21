@@ -1,6 +1,5 @@
 """
 Extract all company/entity names from a debt note HTML file.
-Usage: python3 ner.py path/to/debt_note.html
 """
 
 import sys
