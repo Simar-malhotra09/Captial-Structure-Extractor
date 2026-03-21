@@ -58,6 +58,8 @@ export interface JobStatus {
   status: "pending" | "running" | "done" | "error";
   stage: string;
   detail: string;
+  progress_pct: number;
+  elapsed_sec: number;
   created_at: string;
   result: ExtractionResult | null;
   error: string | null;

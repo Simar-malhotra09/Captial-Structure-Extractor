@@ -79,6 +79,8 @@ async def start_extraction(
         "status": "pending",
         "stage": "",
         "detail": "",
+        "progress_pct": 0,
+        "elapsed_sec": 0,
         "created_at": datetime.now().isoformat(),
         "result": None,
         "error": None,
@@ -339,20 +341,26 @@ def _run_job(job_id, debt_html, lease_html, bs_json, annual_period, market_cap, 
     old_stderr = sys.stderr
     
     try:
-        def progress(stage, detail=""):
+        import time
+        start_time = time.time()
+        
+        def progress(stage, detail="", pct=0):
             job["stage"] = stage
             job["detail"] = detail
+            job["progress_pct"] = pct
+            job["elapsed_sec"] = round(time.time() - start_time, 1)
         
-        # 1. Parse
-        progress("parsing", "Extracting text and entities")
+        # Step 1/6: Parse text
+        progress("Extracting text", "Reading debt note and extracting plain text...", 5)
         text = html_to_text(debt_html)
         
+        # Step 2/6: NER
         if api_key:
+            progress("Identifying entities", f"Calling LLM to find companies in {len(text)} chars of text...", 15)
             entities = extract_entities(text, api_key)
         else:
             entities = []
         
-        # Dedup entities
         entities = sorted(entities, key=len, reverse=True)
         filtered = []
         for e in entities:
@@ -360,7 +368,6 @@ def _run_job(job_id, debt_html, lease_html, bs_json, annual_period, market_cap, 
                 filtered.append(e)
         entities = filtered
         
-        # Find parent
         parent = None
         for e in entities:
             if any(s in e.lower() for s in ('inc', 'corporation', 'corp', 'company', 'co.')):
@@ -369,31 +376,33 @@ def _run_job(job_id, debt_html, lease_html, bs_json, annual_period, market_cap, 
         if not parent and entities:
             parent = entities[0]
         
-        # 2. Parse instruments
-        progress("instruments", f"Parsing debt table ({len(entities)} entities)")
+        # Step 3/6: Parse instruments
+        progress("Parsing debt table", f"Found {len(entities)} entities, extracting instruments from iXBRL...", 30)
         instruments = parse_instruments(debt_html, entities)
         
-        # 3. Parse leases
-        progress("leases", "Parsing lease note")
+        # Step 4/6: Parse leases
+        progress("Parsing lease note", f"{len(instruments)} debt rows found, now processing leases...", 45)
         lease_instruments = parse_leases(lease_html, parent or 'Unknown')
         new_leases = deduplicate_leases(instruments, lease_instruments)
-        progress("leases", f"{len(lease_instruments)} found, {len(new_leases)} after dedup")
+        progress("Parsing lease note", f"{len(lease_instruments)} lease items found, {len(new_leases)} new after dedup", 50)
         instruments.extend(new_leases)
         
-        # 4. Balance sheet
-        progress("balance_sheet", "Parsing balance sheet")
+        # Step 5/6: Balance sheet
+        progress("Parsing balance sheet", "Extracting cash and NCI...", 55)
         bs_data = parse_balance_sheet(bs_json)
         
-        # 5. LLM validation
+        # Step 6/6: LLM validation (longest step)
         llm_corrections = None
         if api_key:
-            progress("llm", "LLM validating instruments")
+            n = len(instruments)
+            progress("LLM validation", f"Sending {n} rows to Claude for entity assignment, priority classification, and duplicate resolution. This is the slowest step (~30-60s)...", 60)
             llm_corrections = llm_validate(instruments, entities, text, api_key, annual_period)
+            progress("LLM validation", f"Received {len(llm_corrections.get('corrections', []))} corrections, applying...", 90)
             instruments = apply_corrections(instruments, llm_corrections)
             prompts[job_id] = json.dumps(llm_corrections, indent=2, default=str)
         
-        # 6. Build result
-        progress("assembling", "Building output")
+        # Assembly
+        progress("Assembling output", "Computing totals and building graph...", 95)
         active = [i for i in instruments if not i.get('_excluded')]
         excluded = [i for i in instruments if i.get('_excluded')]
         
@@ -434,8 +443,9 @@ def _run_job(job_id, debt_html, lease_html, bs_json, annual_period, market_cap, 
         }
         
         job["status"] = "done"
-        job["stage"] = "done"
+        job["stage"] = "Complete"
         job["detail"] = f"Net Debt: ${net_debt:,.1f}mm | {len(active)} instruments"
+        job["progress_pct"] = 100
     
     except Exception as e:
         import traceback

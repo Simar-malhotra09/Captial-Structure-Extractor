@@ -30,6 +30,9 @@ export default function Home() {
   const leaseRef = useRef<HTMLInputElement>(null);
   const metaRef = useRef<HTMLInputElement>(null);
 
+  const [progressPct, setProgressPct] = useState(0);
+  const [elapsedSec, setElapsedSec] = useState(0);
+
   const handleSubmit = useCallback(async () => {
     const bsFile = bsRef.current?.files?.[0];
     const debtFile = debtRef.current?.files?.[0];
@@ -45,6 +48,8 @@ export default function Home() {
     setResult(null);
     setStage("uploading");
     setProgress("Uploading files...");
+    setProgressPct(0);
+    setElapsedSec(0);
 
     try {
       const { job_id } = await submitExtraction(
@@ -58,6 +63,8 @@ export default function Home() {
       const jobResult = await pollUntilDone(job_id, (status: JobStatus) => {
         const msg = status.detail ? `${status.stage}: ${status.detail}` : status.stage;
         setProgress(msg);
+        setProgressPct(status.progress_pct || 0);
+        setElapsedSec(status.elapsed_sec || 0);
       });
 
       if (jobResult.status === "error") {
@@ -131,10 +138,36 @@ export default function Home() {
 
       {/* Loading */}
       {(stage === "uploading" || stage === "processing") && (
-        <div className="max-w-xl mx-auto mt-20 text-center">
-          <Spinner />
-          <p className="mt-4 font-medium text-gray-800">Processing...</p>
-          <p className="mt-1 text-sm text-gray-500">{progress}</p>
+        <div className="max-w-lg mx-auto mt-16 bg-white rounded-lg shadow p-8">
+          <div className="flex items-center justify-between mb-2">
+            <p className="font-semibold text-gray-800 text-sm">{progressPct < 60 ? "Processing..." : "Almost done..."}</p>
+            <span className="text-xs text-gray-400">{elapsedSec > 0 ? `${elapsedSec}s` : ""}{progressPct > 0 && progressPct < 100 ? ` · ~${Math.round((elapsedSec / progressPct) * (100 - progressPct))}s remaining` : ""}</span>
+          </div>
+          
+          {/* Progress bar */}
+          <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden mb-3">
+            <div 
+              className="h-full bg-blue-600 rounded-full transition-all duration-700 ease-out"
+              style={{ width: `${Math.max(progressPct, 2)}%` }}
+            />
+          </div>
+          
+          <p className="text-xs text-gray-500">{progress}</p>
+          
+          {/* Step indicators */}
+          <div className="mt-4 flex gap-1">
+            {["Text", "Entities", "Debt", "Leases", "Balance", "LLM"].map((step, i) => {
+              const stepPct = [5, 15, 30, 50, 55, 90][i];
+              const active = progressPct >= stepPct;
+              const current = progressPct >= stepPct && progressPct < (i < 5 ? [15, 30, 50, 55, 90, 100][i] : 100);
+              return (
+                <div key={step} className="flex-1 text-center">
+                  <div className={`h-1 rounded-full mb-1 ${active ? "bg-blue-600" : "bg-gray-200"} ${current ? "animate-pulse" : ""}`} />
+                  <span className={`text-[9px] ${active ? "text-blue-700 font-medium" : "text-gray-400"}`}>{step}</span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
