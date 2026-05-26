@@ -1,6 +1,6 @@
 # Capital Structure Extractor
 
-**Live app**: [https://capital-struct-extractor.vercel.app/](https://capital-struct-extractor.vercel.app/)
+
 
 Upload a company's balance sheet (JSON), debt footnote (HTML), and lease footnote (HTML) from SEC 10-K filings. The app extracts the capital structure and renders it as a formatted table.
 
