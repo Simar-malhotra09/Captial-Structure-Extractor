@@ -4,9 +4,14 @@
 
 Upload a company's balance sheet (JSON), debt footnote (HTML), and lease footnote (HTML) from SEC 10-K filings. The app extracts the capital structure and renders it as a formatted table.
 
+<h2 align="center">Demo</h2>
 
+<p align="center">
+  <a href="./demo.mp4">
+    <img src="./demo.gif" alt="Capital Structure Extractor Demo" width="900">
+  </a>
+</p>
 
-[Watch demo](./demo.gif)
 ## Setup
 
 ### Backend
