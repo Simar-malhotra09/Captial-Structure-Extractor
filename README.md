@@ -6,7 +6,7 @@ Upload a company's balance sheet (JSON), debt footnote (HTML), and lease footnot
 
 
 
-[Watch demo](./demo.mp4)
+[Watch demo](./demo.gif)
 ## Setup
 
 ### Backend
