@@ -4,6 +4,9 @@
 
 Upload a company's balance sheet (JSON), debt footnote (HTML), and lease footnote (HTML) from SEC 10-K filings. The app extracts the capital structure and renders it as a formatted table.
 
+
+
+[Watch demo](./demo.mp4)
 ## Setup
 
 ### Backend
