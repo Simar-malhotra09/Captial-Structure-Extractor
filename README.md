@@ -4,12 +4,22 @@
 
 Upload a company's balance sheet (JSON), debt footnote (HTML), and lease footnote (HTML) from SEC 10-K filings. The app extracts the capital structure and renders it as a formatted table.
 
-<h2 align="center">Demo</h2>
+## Demo
+
+### Raw Extraction
+
+The initial extraction combines deterministic XBRL parsing with LLM-based classification and validation.
 
 <p align="center">
-  <a href="./demo.mp4">
-    <img src="./demo.gif" alt="Capital Structure Extractor Demo" width="900">
-  </a>
+  <img src="./raw.png" alt="Raw Extraction Output" width="1000">
+</p>
+
+### Human-in-the-Loop Corrections
+
+Users can correct edge cases through natural language. The LLM updates the table, recalculates totals, and preserves source traceability without rerunning the full pipeline.
+
+<p align="center">
+  <img src="./llm-assist.png" alt="LLM Corrections Chat" width="1000">
 </p>
 
 ## Setup
